@@ -19,7 +19,7 @@
     </p>
   {% endif %}
 
-  {% if slots %}
+  {% if slot_rows %}
     <form action="{{ url_for('book') }}" method="post" id="booking-form">
       <input type="hidden" name="doctor_id" value="{{ doctor.id }}">
 
@@ -32,10 +32,12 @@
         </select>
       </label>
 
-      <label>Available times
+      <label>Time
         <select name="slot">
-          {% for s in slots %}
-            <option value="{{ s }}">{{ s }}</option>
+          {% for row in slot_rows %}
+            <option value="{{ row.time }}" class="{{ 'slot-open' if row.available else 'slot-taken' }}">
+              {{ row.time }}{{ '' if row.available else ' (already booked)' }}
+            </option>
           {% endfor %}
         </select>
       </label>

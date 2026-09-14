@@ -131,10 +131,17 @@ def doctor_detail(doctor_id: str):
     doctor = DOCTORS_BY_ID.get(doctor_id)
     if not doctor:
         return "Doctor not found", 404
+    # Every slot is listed, taken ones included and marked unavailable — a taken slot
+    # must still be a selectable option so a patient (or a test) can attempt to book it
+    # and see the real rejection, rather than it silently disappearing from the list.
+    slot_rows = [
+        {"time": s, "available": (doctor["id"], s) not in booked_slots}
+        for s in doctor["slots"]
+    ]
     return render_template(
         "doctor_detail.html",
         doctor=doctor,
-        slots=available_slots(doctor),
+        slot_rows=slot_rows,
         appointment_types=APPOINTMENT_TYPES,
         error=request.args.get("error"),
     )
