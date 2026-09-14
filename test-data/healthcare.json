@@ -1,0 +1,10 @@
+{
+  "_comment": "Non-secret values for {{variables}} kane-cli's designed tests may reference. Names here are a best-effort guess at what kane-cli will invent from requirements/healthcare-website.md — reconcile against the actual designed *_test.md files after the first real `design tests` run and adjust this file to match (see README).",
+  "search_term_with_matches": { "value": "Cardiology" },
+  "search_term_no_matches": { "value": "zzz-no-such-doctor" },
+  "specialty_name": { "value": "Dermatology" },
+  "doctor_with_open_slots": { "value": "Dr. Nia Osei" },
+  "valid_appointment_type": { "value": "New Patient" },
+  "sort_option": { "value": "fee" },
+  "results_per_page": { "value": "3" }
+}

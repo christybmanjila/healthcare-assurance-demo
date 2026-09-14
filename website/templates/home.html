@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Riverbend Clinic — Find a Doctor{% endblock %}
+{% block content %}
+  <h1>Find and book a doctor</h1>
+  <p>Search by name or specialty, or browse a department below.</p>
+
+  <h2>Browse by specialty</h2>
+  <ul id="specialty-list">
+    {% for s in specialties %}
+      <li><a href="{{ url_for('specialty', name=s) }}">{{ s }}</a></li>
+    {% endfor %}
+  </ul>
+{% endblock %}

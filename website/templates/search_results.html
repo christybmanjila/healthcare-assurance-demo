@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Search results for "{{ query }}" — Riverbend Clinic{% endblock %}
+{% block content %}
+  <h1>Search results for "{{ query }}"</h1>
+
+  {% if results %}
+    <div class="doctor-grid" id="results-grid">
+      {% for d in results %}
+        <div class="doctor-tile">
+          <a href="{{ url_for('doctor_detail', doctor_id=d.id) }}" class="doctor-name">{{ d.name }}</a>
+          <div class="doctor-specialty">{{ d.specialty }}</div>
+          <div class="doctor-fee">Consultation fee: ${{ d.fee }}</div>
+          <div class="doctor-rating">Rating: {{ d.rating }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p id="no-results">No doctors match your search.</p>
+  {% endif %}
+{% endblock %}

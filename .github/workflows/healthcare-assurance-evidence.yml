@@ -1,0 +1,406 @@
+name: Healthcare Website · Assurance & Evidence
+
+# Requirements -> designed tests -> executed proof -> coverage gate.
+# Every stage is kane-cli; nothing is hand-authored.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'requirements/**'
+      - '.testmuai/tests/**'
+      - 'website/**'
+      - '.github/workflows/healthcare-assurance-evidence.yml'
+  pull_request:
+    paths:
+      - 'requirements/**'
+      - '.testmuai/tests/**'
+      - 'website/**'
+  schedule:
+    - cron: '30 1 * * 1-5'      # 07:00 IST, weekdays
+  workflow_dispatch:
+    inputs:
+      max_pairs:
+        description: Max scenario+test pairs designed per use-case
+        default: '12'
+      coverage_threshold:
+        description: Minimum proven coverage %% before the build fails
+        default: '80'
+      force_design:
+        description: Redesign use-cases that already have a live design
+        type: boolean
+        default: false
+
+concurrency:
+  group: healthcare-assurance-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  # The sample website (website/server.py) is started in the evidence job and torn down
+  # with the runner — not a real deployment. Point this at a real staging URL instead once
+  # you have one, and drop the "Start the sample website" / "Stop the sample website" steps.
+  APP_URL: http://localhost:5050
+  KANE_CLI_USER_AGENT: github-actions
+  MAX_PAIRS: ${{ inputs.max_pairs || '12' }}
+  COVERAGE_THRESHOLD: ${{ inputs.coverage_threshold || '80' }}
+
+jobs:
+  # ===========================================================================
+  # 1 — ASSURANCE. The requirements document is the input; a committed context
+  #     graph and a set of designed *_test.md files are the output.
+  # ===========================================================================
+  assurance:
+    name: 1 · Assurance — requirements to designed tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      usecase_count: ${{ steps.design.outputs.usecase_count }}
+      test_count: ${{ steps.design.outputs.test_count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-kane
+        with:
+          username: ${{ secrets.LT_USERNAME }}
+          access-key: ${{ secrets.LT_ACCESS_KEY }}
+          project-id: ${{ secrets.TESTMUAI_PROJECT_ID }}
+          folder-id: ${{ secrets.TESTMUAI_FOLDER_ID }}
+
+      # The graph is an append-only commit chain. Reusing it across runs means
+      # unchanged requirements are not re-extracted and not re-billed.
+      # .kane-state holds the designed *_test.md files (see scripts/assurance.sh):
+      # kane-cli cannot rebuild them from the graph, so they travel with it.
+      - name: Restore context graph
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .context
+            .kane-state
+          key: kane-assurance-v2-${{ hashFiles('requirements/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            kane-assurance-v2-${{ hashFiles('requirements/**') }}-
+            kane-assurance-v2-
+
+      - name: Point kane-cli at the website
+        run: kane-cli config set-url "$APP_URL"
+
+      - name: Ingest, extract, review, design
+        id: design
+        env:
+          REQ_GLOB: requirements/*.md
+          MAX_PAIRS: ${{ env.MAX_PAIRS }}
+          AUTO_APPROVE: 'true'
+          FORCE_DESIGN: ${{ inputs.force_design || 'false' }}
+        run: bash scripts/assurance.sh
+
+      - name: Save context graph
+        if: ${{ !cancelled() && (steps.design.outcome == 'success' || steps.design.outcome == 'failure') }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .context
+            .kane-state
+          key: kane-assurance-v2-${{ hashFiles('requirements/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Assurance summary
+        if: always()
+        run: |
+          {
+            echo "## 1 · Assurance"
+            echo
+            echo "Source of truth: \`requirements/healthcare-website.md\`"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Live use-cases | ${{ steps.design.outputs.usecase_count || 0 }} |"
+            echo "| Designed tests | ${{ steps.design.outputs.test_count || 0 }} |"
+            echo
+            echo '<details><summary>Context graph nodes</summary>'
+            echo
+            echo '```'
+            kane-cli context list || true
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the graph and the designed tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: assurance-graph-${{ github.run_number }}
+          path: |
+            .context/
+            .testmuai/tests/
+            usecases.txt
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: warn
+
+  # ===========================================================================
+  # 2 — EVIDENCE. Run every designed test as ONE execution so the whole suite
+  #     seals into a single evidence pack. That pack is the buyer artifact.
+  # ===========================================================================
+  evidence:
+    name: 2 · Evidence — execute and seal the pack
+    needs: assurance
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    outputs:
+      pack: ${{ steps.pack.outputs.path }}
+      status: ${{ steps.execute.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-kane
+        with:
+          username: ${{ secrets.LT_USERNAME }}
+          access-key: ${{ secrets.LT_ACCESS_KEY }}
+          project-id: ${{ secrets.TESTMUAI_PROJECT_ID }}
+          folder-id: ${{ secrets.TESTMUAI_FOLDER_ID }}
+
+      - name: Fetch the designed tests
+        uses: actions/download-artifact@v4
+        with:
+          name: assurance-graph-${{ github.run_number }}
+
+      - name: Restore recorded steps
+        uses: actions/cache/restore@v4
+        with:
+          path: .testmuai/tests/output-*
+          key: kane-recordings-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: kane-recordings-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the sample website's dependencies
+        run: pip install -r website/requirements.txt
+
+      # The website under test is started here, not deployed anywhere — the pipeline is
+      # fully self-contained. Point APP_URL at a real staging deployment instead once you
+      # have one, and drop this step and "Stop the sample website" below.
+      - name: Start the sample website
+        run: |
+          set -euo pipefail
+          nohup python website/server.py > website.log 2>&1 &
+          echo $! > website.pid
+          for i in $(seq 1 20); do
+            if curl -sf "$APP_URL/health" > /dev/null; then
+              echo "Sample website is up."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Sample website did not become healthy in time."
+          cat website.log
+          exit 1
+        env:
+          PORT: '5050'
+
+      - name: Provision test data
+        run: python3 scripts/test_data.py provision
+
+      - name: Collect members
+        id: members
+        run: |
+          set -euo pipefail
+          find .testmuai/tests -name '*_test.md' | sort > members.txt
+          echo "count=$(wc -l < members.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          cat members.txt
+
+          UNAUTHORED=0
+          while read -r t; do
+            stem=$(basename "$t" _test.md)
+            [ -f "$(dirname "$t")/output-$stem/.internal/meta.json" ] || UNAUTHORED=$((UNAUTHORED + 1))
+          done < members.txt
+          PARALLEL=$([ "$UNAUTHORED" -eq 0 ] && echo 2 || echo 1)
+          echo "parallel=$PARALLEL" >> "$GITHUB_OUTPUT"
+          echo "Unauthored members: $UNAUTHORED -> --parallel $PARALLEL"
+
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          python3 scripts/test_data.py check members.txt
+          mapfile -t TESTS < members.txt
+          kane-cli testrun run "${TESTS[@]}" --dry-run \
+            --name "Healthcare preflight #${{ github.run_number }}"
+
+      - name: Execute the healthcare suite
+        id: execute
+        run: |
+          set -uo pipefail
+          set +e
+          mapfile -t TESTS < members.txt
+          kane-cli testrun run "${TESTS[@]}" \
+            --name "Healthcare regression #${{ github.run_number }} (${GITHUB_SHA:0:7})" \
+            --parallel ${{ steps.members.outputs.parallel }} \
+            --on-failure continue \
+            --headless \
+            | tee testrun.ndjson
+          CODE=${PIPESTATUS[0]}
+          echo "status=$CODE" >> "$GITHUB_OUTPUT"
+          if [ "$CODE" -eq 2 ]; then exit 2; fi
+          exit 0
+
+      - name: Stop the sample website
+        if: always()
+        run: kill "$(cat website.pid)" 2>/dev/null || true
+
+      - name: Save recorded steps
+        if: always() && steps.execute.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: .testmuai/tests/output-*
+          key: kane-recordings-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Publish the executed graph
+        if: always() && steps.execute.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: assurance-graph-executed-${{ github.run_number }}
+          path: .context/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Locate the sealed pack
+        id: pack
+        run: |
+          set -euo pipefail
+          PACK=$( { find .testmuai/evidence -name '*.evidence' -printf '%T@ %p\n' 2>/dev/null || true; } \
+                 | sort -rn | head -1 | cut -d' ' -f2-)
+          if [ -z "$PACK" ]; then
+            echo "::error title=No evidence pack::testrun produced no sealed pack."
+            exit 1
+          fi
+          echo "path=$PACK" >> "$GITHUB_OUTPUT"
+          ls -lh "$PACK"
+
+      - name: Validate the pack
+        run: |
+          set -euo pipefail
+          kane-cli evidence validate "${{ steps.pack.outputs.path }}" \
+            --profile L1 --json | tee evidence-validation.json
+          {
+            echo "## 2 · Evidence"
+            echo
+            echo "Pack: \`$(basename "${{ steps.pack.outputs.path }}")\`  ·  L1 validated"
+            echo
+            echo "View it locally with:"
+            echo
+            echo '```bash'
+            echo "kane-cli evidence serve $(basename "${{ steps.pack.outputs.path }}")"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the evidence pack
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: healthcare-evidence-${{ github.run_number }}
+          path: |
+            .testmuai/evidence/*.evidence
+            evidence-validation.json
+            testrun.ndjson
+            website.log
+          retention-days: 90
+          if-no-files-found: warn
+
+  # ===========================================================================
+  # 3 — COVERAGE. Two axes: completeness owed by the graph, depth proven by the
+  #     pack. This is the stage that turns "tests passed" into "requirements met".
+  # ===========================================================================
+  coverage:
+    name: 3 · Coverage — designed vs proven
+    needs: [assurance, evidence]
+    if: always() && needs.evidence.outputs.pack != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-kane
+        with:
+          username: ${{ secrets.LT_USERNAME }}
+          access-key: ${{ secrets.LT_ACCESS_KEY }}
+          project-id: ${{ secrets.TESTMUAI_PROJECT_ID }}
+          folder-id: ${{ secrets.TESTMUAI_FOLDER_ID }}
+
+      - name: Fetch the executed graph
+        uses: actions/download-artifact@v4
+        with:
+          name: assurance-graph-executed-${{ github.run_number }}
+          path: .context
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: healthcare-evidence-${{ github.run_number }}
+          path: .testmuai/evidence
+
+      - name: Compute the coverage ribbon
+        run: |
+          set -euo pipefail
+          PACK=$(find .testmuai/evidence -name '*.evidence' | head -1)
+          echo "PACK=$PACK" >> "$GITHUB_ENV"
+          kane-cli cover --from "$PACK" gaps --rollup strict            > coverage.txt || true
+          kane-cli cover --from "$PACK" gaps --rollup strict --json     > coverage.json || true
+          cat coverage.txt
+
+      - name: Gate on proven coverage
+        id: gate
+        run: |
+          python3 scripts/coverage_gate.py \
+            --json coverage.json \
+            --table coverage.txt \
+            --pack "$PACK" \
+            --threshold "$COVERAGE_THRESHOLD"
+
+      - name: Comment the ribbon on the PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const ribbon = fs.existsSync('coverage.txt')
+              ? fs.readFileSync('coverage.txt', 'utf8').trim()
+              : '(no ribbon produced)';
+            const gate = '${{ steps.gate.outcome }}' === 'success' ? '🟢 passed' : '🔴 below gate';
+            const body = [
+              '### Healthcare website assurance — designed × proven',
+              '',
+              `Coverage gate: ${gate} (threshold ${process.env.COVERAGE_THRESHOLD}%)`,
+              `Use-cases: ${{ needs.assurance.outputs.usecase_count || 0 }} · Designed tests: ${{ needs.assurance.outputs.test_count || 0 }}`,
+              '',
+              '<details><summary>Coverage ribbon</summary>',
+              '',
+              '```',
+              ribbon,
+              '```',
+              '',
+              '</details>',
+              '',
+              `Evidence pack is attached to [run #${{ github.run_number }}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: Publish the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: healthcare-coverage-${{ github.run_number }}
+          path: |
+            coverage.txt
+            coverage.json
+          retention-days: 30
+          if-no-files-found: warn

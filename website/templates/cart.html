@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}My Appointments — Riverbend Clinic{% endblock %}
+{% block content %}
+  <h1>My Appointments</h1>
+
+  {% if items %}
+    <table id="appointments-table">
+      <thead>
+        <tr><th>Doctor</th><th>Specialty</th><th>Time</th><th>Type</th><th>Fee</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr class="appointment-row">
+            <td>{{ item.doctor_name }}</td>
+            <td>{{ item.specialty }}</td>
+            <td>{{ item.slot }}</td>
+            <td>{{ item.appointment_type }}</td>
+            <td>${{ item.fee }}</td>
+            <td>
+              <form action="{{ url_for('cancel_appointment', index=loop.index0) }}" method="post">
+                <button type="submit" class="cancel-button">Cancel</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p id="appointments-total">Total estimated cost: ${{ total }}</p>
+  {% else %}
+    <p id="no-appointments">You have no upcoming appointments.</p>
+  {% endif %}
+{% endblock %}

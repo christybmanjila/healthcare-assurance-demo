@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Riverbend Clinic{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div id="emergency-banner">If this is a medical emergency, call 911 or go to your nearest emergency room.</div>
+
+  <header>
+    <a href="{{ url_for('home') }}" id="site-name">Riverbend Clinic</a>
+
+    <form action="{{ url_for('search') }}" method="get" id="search-form">
+      <input type="text" name="q" placeholder="Search doctors or specialties" value="{{ request.args.get('q', '') }}" aria-label="Search">
+      <button type="submit">Search</button>
+    </form>
+
+    <nav id="specialty-nav">
+      {% for s in specialties %}
+        <a href="{{ url_for('specialty', name=s) }}">{{ s }}</a>
+      {% endfor %}
+    </nav>
+
+    <a href="{{ url_for('appointments') }}" id="cart-link">My Appointments ({{ cart_count }})</a>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <a href="{{ url_for('contact') }}">Contact &amp; office hours</a>
+    <p>All information on this site is for demonstration purposes and does not constitute medical advice.</p>
+  </footer>
+</body>
+</html>

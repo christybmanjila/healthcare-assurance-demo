@@ -1,0 +1,15 @@
+node_modules/
+.testmuai/evidence/
+.testmuai/sessions/
+.testmuai/variables/
+.testmuai/rook/
+coverage.json
+coverage.txt
+testrun.ndjson
+members.txt
+usecases.txt
+.kane-state/
+website.log
+website.pid
+__pycache__/
+*.pyc

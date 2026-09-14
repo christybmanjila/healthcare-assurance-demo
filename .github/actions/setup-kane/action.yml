@@ -1,0 +1,68 @@
+name: Setup kane-cli
+description: Install kane-cli, authenticate non-interactively, and verify the identity.
+
+inputs:
+  version:
+    description: npm version/tag of @testmuai/kane-cli to install.
+    required: false
+    # Pin deliberately — bump only after checking `kane-cli changelog` and re-verifying
+    # the flags this workflow depends on (see README "Note on flags").
+    default: '0.8.11'
+  username:
+    description: TestMu AI / LambdaTest username.
+    required: true
+  access-key:
+    description: TestMu AI / LambdaTest access key.
+    required: true
+  project-id:
+    description: TMS project id. Skips the interactive project picker.
+    required: false
+    default: ''
+  folder-id:
+    description: TMS folder id. Skips the interactive folder picker.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install kane-cli
+      shell: bash
+      run: |
+        npm install -g "@testmuai/kane-cli@${{ inputs.version }}"
+        kane-cli --version
+
+    # kane-cli manages its own Chrome. On the hosted runner the preinstalled
+    # Chrome is already there, so point at it and skip the extra download.
+    - name: Point kane-cli at the runner's Chrome
+      shell: bash
+      run: |
+        CHROME_BIN="$(command -v google-chrome || command -v chromium-browser || true)"
+        if [ -n "$CHROME_BIN" ]; then
+          echo "KANE_CLI_CHROME_PATH=$CHROME_BIN"        >> "$GITHUB_ENV"
+          echo "KANE_CLI_SKIP_BROWSER_DOWNLOAD=1"        >> "$GITHUB_ENV"
+          echo "Using $CHROME_BIN"
+        else
+          echo "No system Chrome found — kane-cli will download its own."
+        fi
+
+    # Basic auth instead of --oauth: OAuth opens a browser, which no runner has.
+    - name: Authenticate
+      shell: bash
+      env:
+        LT_USERNAME: ${{ inputs.username }}
+        LT_ACCESS_KEY: ${{ inputs.access-key }}
+        TESTMUAI_PROJECT_ID: ${{ inputs.project-id }}
+        TESTMUAI_FOLDER_ID: ${{ inputs.folder-id }}
+      run: |
+        set -euo pipefail
+        ARGS=(login --username "$LT_USERNAME" --access-key "$LT_ACCESS_KEY")
+        [ -n "$TESTMUAI_PROJECT_ID" ] && ARGS+=(--project-id "$TESTMUAI_PROJECT_ID")
+        [ -n "$TESTMUAI_FOLDER_ID" ]  && ARGS+=(--folder-id  "$TESTMUAI_FOLDER_ID")
+        kane-cli "${ARGS[@]}"
+        kane-cli whoami
