@@ -13,3 +13,7 @@ website.log
 website.pid
 __pycache__/
 *.pyc
+
+# Local artifacts / OS files
+.DS_Store
+*.zip

@@ -195,6 +195,33 @@ def contact():
     return render_template("contact.html")
 
 
+# Test-fixture seeding only — not part of the product surface. Books one or more
+# appointments into the CALLING browser's own session (same cookie jar) before
+# redirecting, so a kane-cli scenario can arrive at a page with pre-existing
+# appointments by navigating here first, instead of being told to "book this
+# yourself" in prose (which the agent doesn't reliably act on — see README).
+# `book` repeats as doctor_id:slot:appointment_type, `:` and `,`-separated.
+@app.get("/dev/seed")
+def dev_seed():
+    for entry in request.args.getlist("book"):
+        doctor_id, slot, appointment_type = entry.split(":", 2)
+        doctor = DOCTORS_BY_ID.get(doctor_id)
+        if not doctor or (doctor_id, slot) in booked_slots:
+            continue
+        booked_slots.add((doctor_id, slot))
+        c = cart()
+        c.append({
+            "doctor_id": doctor_id,
+            "doctor_name": doctor["name"],
+            "specialty": doctor["specialty"],
+            "slot": slot,
+            "appointment_type": appointment_type,
+            "fee": doctor["fee"],
+        })
+        session["cart"] = c
+    return redirect(request.args.get("next", "/"))
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

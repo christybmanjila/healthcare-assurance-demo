@@ -97,22 +97,38 @@ them from `.testmuai/variables/*.json`, which is gitignored, so the evidence job
 
 `test-data/healthcare.json`'s variable names are reconciled against the actual designed
 `*_test.md` files from a real `design tests` run, not guessed — see the file's `_comment`
-key. Three of them (`patient_with_booked_appointments`, `patient_with_cancelable_appointment`,
-`self_booked_slot_time`) hold natural-language *instructions* rather than a bare value: a
-fresh browser session starts with an empty appointments cart, and only actions taken inside
-that same session can populate it, so the fixture has to tell the agent to book the
-appointment itself as part of the scenario before the test's own assertions run. That's the
-least certain part of this file — watch the first few real runs and adjust the wording in
-`test-data/healthcare.json` if the agent doesn't reliably act on it.
+key, and the two fixture mechanisms below (both learned from a real run's failure records,
+not assumed up front).
 
-One variable, `other_patient_booked_slot_time`, needs the opposite treatment: it has to be
-genuinely already-booked *before* kane-cli's browser ever opens the site, which no in-session
-instruction can arrange. `scripts/test_data.py provision` makes a real `POST /book` call
-against the running website for this before the suite starts — see
-`preseed_other_patient_booking()` there. If you touch which doctor/slot any of these four
-variables reference, keep `test-data/healthcare.json` and the `PRESEED_*` constants in
-`scripts/test_data.py` in sync — they all currently point at the same doctor (Dr. Nia Osei)
-so the three slot states (open, self-booked, other-patient-booked) don't collide.
+**Two variables** (`patient_with_booked_appointments`, `patient_with_cancelable_appointment`)
+hold natural-language *instructions* rather than a bare value: a fresh browser session starts
+with an empty appointments cart, and only actions taken inside that same session can populate
+it, so the fixture tells the agent to book the appointment itself as part of the scenario
+before the test's own assertions run. This is proven to work — `review-booked-appointments`'s
+passing run shows the agent's own step trace performing exactly the navigate → select → click
+sequence described — but it's still the least reliable mechanism in this file (a later run of
+`cancel-a-booked-appointment` didn't carry it out; its own failure record calls it plain agent
+variance, not a wording defect). Watch new runs and tighten the wording if it recurs.
+
+**Two others** (`self_booked_slot_time`, `other_patient_booked_slot_time`) need the opposite
+treatment: they have to be genuinely already-booked *before* kane-cli's browser ever opens the
+site, which no in-session instruction can reliably arrange (an earlier run tried the
+instruction approach for `self_booked_slot_time` and the agent never carried it out — see
+`scripts/test_data.py`'s module docstring). `scripts/test_data.py provision` instead makes two
+real `POST /book` calls against the running website before the suite starts —
+`preseed_bookings()` there — which has no agent-interpretation risk at all: the app makes no
+distinction between "this patient" and "another patient" bookings, so a real HTTP call is
+exactly as correct as an in-session one. If you touch which doctor/slot these two, plus
+`doctor_name`/`doctor_profile_url`/`open_slot_time`, reference, keep
+`test-data/healthcare.json` and the `PRESEED_*` constants in `scripts/test_data.py` in sync —
+they all currently point at the same doctor (Dr. Nia Osei) so the three slot states (open,
+self-booked, other-patient-booked) don't collide.
+
+A general-purpose `GET /dev/seed?book=<doctor_id>:<slot>:<type>&next=<path>` route on the
+sample website (test-fixture-only, not part of the product surface) books one or more
+appointments into the *calling* browser's own session before redirecting — built for this
+reconciliation and available if a future fixture needs same-session seeding without relying
+on an agent following prose.
 
 Preflight runs `scripts/test_data.py check`: if any member uses a variable nothing supplies,
 the job stops with the variable name and the tests that need it, before a browser starts.

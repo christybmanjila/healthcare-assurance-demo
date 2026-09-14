@@ -59,30 +59,43 @@ PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)(?:\.[^}]*)?\s*\}\}")
 # so the "reject an already-booked slot" test can exercise all three states (open,
 # self-booked, other-patient-booked) on one doctor without any of them colliding.
 PRESEED_DOCTOR_ID = "osei"
+# Both slots pre-booked before the suite starts. The app makes no distinction between
+# "this patient" and "another patient" bookings (a taken slot rejects anyone), so both
+# the self-booked and other-patient-booked fixtures need is a slot that's genuinely
+# already taken — there's no reason to route one of them through an in-session agent
+# instruction when a real HTTP call is exactly as correct and has none of the
+# interpretation risk (see the run-4 failure record for reject-booking-an-already-booked:
+# the agent never actually carried out the embedded "book this yourself first" text).
+PRESEED_SELF_BOOKED_SLOT = "2026-09-22 10:00"
 PRESEED_OTHER_PATIENT_SLOT = "2026-09-23 13:00"
 
 
-def preseed_other_patient_booking() -> None:
-    """Book PRESEED_OTHER_PATIENT_SLOT server-side, before the browser suite starts, so
-    it's genuinely already-taken when the "reject an already-booked slot" test runs — a
-    real HTTP call is the only way to establish this; nothing that runs inside kane-cli's
-    own browser session later could reach back and pre-seed itself."""
-    app_url = os.environ.get("APP_URL")
-    if not app_url:
-        print("::warning::APP_URL not set; skipping other-patient-booking pre-seed.")
-        return
+def _book(app_url: str, slot: str, label: str) -> None:
     body = urllib.parse.urlencode({
         "doctor_id": PRESEED_DOCTOR_ID,
         "appointment_type": "Follow-up",
-        "slot": PRESEED_OTHER_PATIENT_SLOT,
+        "slot": slot,
     }).encode()
     req = urllib.request.Request(f"{app_url}/book", data=body, method="POST")
     try:
         urllib.request.urlopen(req, timeout=10)
-        print(f"Pre-seeded: {PRESEED_DOCTOR_ID} / {PRESEED_OTHER_PATIENT_SLOT} booked "
-              f"as 'another patient' before the suite starts.")
+        print(f"Pre-seeded: {PRESEED_DOCTOR_ID} / {slot} booked as '{label}' before the suite starts.")
     except urllib.error.URLError as exc:
-        print(f"::warning::Could not pre-seed other-patient booking: {exc}")
+        print(f"::warning::Could not pre-seed {label} booking: {exc}")
+
+
+def preseed_bookings() -> None:
+    """Book PRESEED_SELF_BOOKED_SLOT and PRESEED_OTHER_PATIENT_SLOT server-side, before
+    the browser suite starts, so both are genuinely already-taken when the
+    "reject an already-booked slot" test runs — a real HTTP call is the only way to
+    establish this; nothing that runs inside kane-cli's own browser session later could
+    reach back and pre-seed itself."""
+    app_url = os.environ.get("APP_URL")
+    if not app_url:
+        print("::warning::APP_URL not set; skipping booking pre-seed.")
+        return
+    _book(app_url, PRESEED_SELF_BOOKED_SLOT, "this patient")
+    _book(app_url, PRESEED_OTHER_PATIENT_SLOT, "another patient")
 
 
 def provision() -> int:
@@ -96,7 +109,7 @@ def provision() -> int:
     OUT_FILE.write_text(json.dumps(variables, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote {len(variables)} variables to {OUT_FILE}: {', '.join(sorted(variables))}")
 
-    preseed_other_patient_booking()
+    preseed_bookings()
     return 0
 
 
@@ -128,15 +141,16 @@ def frontmatter_keys(text: str) -> set[str]:
 
 
 def stored_in_run(text: str) -> set[str]:
-    """Names the test itself establishes as it runs, not something we need to supply:
-    - the explicit "store X as name" / "note ... as name" phrasing kane-cli sometimes uses
-    - anything named baseline_* — kane-cli's convention for a value a step captures from
-      the page ("capture baseline: ...") for a later step to compare against; the capturing
-      step never spells the variable name out in prose, so there's no text pattern to match
-      on beyond the name itself."""
-    stored = set(re.findall(r"\b(?:as|note)\s+['\"`]?([A-Za-z_][A-Za-z0-9_]*)", text))
-    stored |= set(m for m in PLACEHOLDER.findall(text) if m.startswith("baseline_"))
-    return stored
+    """Names the test itself establishes as it runs via explicit "store X as name" /
+    "note ... as name" phrasing.
+
+    A `baseline_*`-prefixed placeholder used to get a free pass here on the theory that
+    kane-cli's own "capture baseline: ..." phrasing resolves it at runtime. It doesn't:
+    run 4's failure record for the per-page test showed the literal string
+    "{{baseline_tile_count}}" left unresolved and handed to the agent verbatim, stuck with
+    nothing to compare against. Every {{placeholder}}, baseline_* included, needs a real
+    supplied value — see test-data/healthcare.json."""
+    return set(re.findall(r"\b(?:as|note)\s+['\"`]?([A-Za-z_][A-Za-z0-9_]*)", text))
 
 
 def check(members_file: str) -> int:
