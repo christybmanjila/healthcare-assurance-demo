@@ -95,18 +95,34 @@ them from `.testmuai/variables/*.json`, which is gitignored, so the evidence job
 `.testmuai/variables/ci.json` with `scripts/test_data.py provision` from
 `test-data/healthcare.json` plus `start_url` from `APP_URL`.
 
-The variable names in `test-data/healthcare.json` are a **best-effort guess** at what
-kane-cli will actually design tests around (there's no shopper-account precedent to copy
-from the way the retail demo had) — reconcile them against the real `*_test.md` files after
-the first `design tests` run: look for `{{...}}` placeholders the check step flags as
-missing, and add matching keys to the JSON file.
+`test-data/healthcare.json`'s variable names are reconciled against the actual designed
+`*_test.md` files from a real `design tests` run, not guessed — see the file's `_comment`
+key. Three of them (`patient_with_booked_appointments`, `patient_with_cancelable_appointment`,
+`self_booked_slot_time`) hold natural-language *instructions* rather than a bare value: a
+fresh browser session starts with an empty appointments cart, and only actions taken inside
+that same session can populate it, so the fixture has to tell the agent to book the
+appointment itself as part of the scenario before the test's own assertions run. That's the
+least certain part of this file — watch the first few real runs and adjust the wording in
+`test-data/healthcare.json` if the agent doesn't reliably act on it.
+
+One variable, `other_patient_booked_slot_time`, needs the opposite treatment: it has to be
+genuinely already-booked *before* kane-cli's browser ever opens the site, which no in-session
+instruction can arrange. `scripts/test_data.py provision` makes a real `POST /book` call
+against the running website for this before the suite starts — see
+`preseed_other_patient_booking()` there. If you touch which doctor/slot any of these four
+variables reference, keep `test-data/healthcare.json` and the `PRESEED_*` constants in
+`scripts/test_data.py` in sync — they all currently point at the same doctor (Dr. Nia Osei)
+so the three slot states (open, self-booked, other-patient-booked) don't collide.
 
 Preflight runs `scripts/test_data.py check`: if any member uses a variable nothing supplies,
 the job stops with the variable name and the tests that need it, before a browser starts.
+`check`'s `stored_in_run()` also knows to skip anything named `baseline_*` — kane-cli's own
+convention for a value a step captures from the page for a later step to compare against,
+not something this file needs to supply.
 
 ### A note on shared state
 
-`website/server.py`'s appointment slots (3 per doctor, 10 doctors) are shared, in-memory,
+`website/server.py`'s appointment slots (3 per doctor, 12 doctors) are shared, in-memory,
 and consumed for the life of the process — that's what makes double-booking testable at all.
 It also means a suite that books more appointments than there are slots will start seeing
 real "slot no longer available" results near the end of a run. Fine at the default

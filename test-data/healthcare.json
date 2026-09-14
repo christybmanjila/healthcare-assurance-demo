@@ -1,10 +1,43 @@
 {
-  "_comment": "Non-secret values for {{variables}} kane-cli's designed tests may reference. Names here are a best-effort guess at what kane-cli will invent from requirements/healthcare-website.md — reconcile against the actual designed *_test.md files after the first real `design tests` run and adjust this file to match (see README).",
-  "search_term_with_matches": { "value": "Cardiology" },
-  "search_term_no_matches": { "value": "zzz-no-such-doctor" },
-  "specialty_name": { "value": "Dermatology" },
-  "doctor_with_open_slots": { "value": "Dr. Nia Osei" },
-  "valid_appointment_type": { "value": "New Patient" },
-  "sort_option": { "value": "fee" },
-  "results_per_page": { "value": "3" }
+  "_comment": "Reconciled against the actual designed *_test.md files from workflow run #2 — see scripts/test_data.py's module docstring for how the fixture-instruction variables (patient_with_booked_appointments, patient_with_cancelable_appointment, self_booked_slot_time) work, and PRESEED_DOCTOR_ID/PRESEED_OTHER_PATIENT_SLOT there for the one variable that needs real server-side setup (other_patient_booked_slot_time).",
+
+  "appointment_type": { "value": "New Patient" },
+  "no_match_term": { "value": "zzz-no-such-doctor" },
+
+  "specialty_listing_fixture": { "value": "General Medicine" },
+
+  "doctor_name": { "value": "Dr. Nia Osei" },
+  "doctor_specialty": { "value": "General Medicine" },
+  "consultation_fee": { "value": "$100" },
+  "doctor_rating": { "value": "4.8" },
+  "doctor_short_bio": { "value": "Primary care and annual wellness visits." },
+  "doctor_listing_url": { "value": "http://localhost:5050/specialty/General%20Medicine" },
+  "doctor_profile_url": { "value": "http://localhost:5050/doctor/osei" },
+  "doctor_search_query": { "value": "Osei" },
+  "doctor_search_results_url": { "value": "http://localhost:5050/search?q=Osei" },
+
+  "open_slot_time": { "value": "2026-09-21 09:00" },
+  "self_booked_slot_time": {
+    "value": "2026-09-22 10:00 — before this step, first open http://localhost:5050/doctor/osei in this same browser session and book Dr. Nia Osei for appointment type 'New Patient' at exactly this slot (2026-09-22 10:00), so it is already booked by you when this step attempts to book it again"
+  },
+  "other_patient_booked_slot_time": {
+    "value": "2026-09-23 13:00",
+    "_note": "Pre-booked server-side before the suite starts by scripts/test_data.py's preseed_other_patient_booking() — must match PRESEED_DOCTOR_ID/PRESEED_OTHER_PATIENT_SLOT there."
+  },
+
+  "patient_session": {
+    "value": "not applicable — this site has no sign-in requirement, proceed directly without any authentication step"
+  },
+  "patient_with_no_appointments": {
+    "value": "a fresh browser session with no prior bookings — no setup needed, proceed directly"
+  },
+  "patient_with_booked_appointments": {
+    "value": "a fresh browser session where you first book exactly two appointments before proceeding to Step 1: (1) open http://localhost:5050/doctor/kim and book Dr. Grace Kim for appointment type 'New Patient' at slot 2026-09-21 08:00; (2) open http://localhost:5050/doctor/holt and book Dr. Derek Holt for appointment type 'Follow-up' at slot 2026-09-21 16:00. Complete both bookings first, in this same session, then continue to Step 1."
+  },
+  "expected_booked_appointments": { "value": "2" },
+
+  "patient_with_cancelable_appointment": {
+    "value": "a fresh browser session where you first book exactly one appointment before proceeding to Step 1: open http://localhost:5050/doctor/chen and book Dr. Liam Chen for appointment type 'New Patient' at slot 2026-09-21 13:00. Complete that booking first, in this same session, then continue to Step 1; this is the appointment that is safe to cancel."
+  },
+  "expected_remaining_appointments_after_cancel": { "value": "0" }
 }

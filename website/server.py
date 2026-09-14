@@ -52,6 +52,12 @@ DOCTORS = [
     {"id": "novak", "name": "Dr. Peter Novak", "specialty": "General Medicine", "fee": 95, "rating": 4.5,
      "bio": "Same-day primary care and chronic condition management.",
      "slots": ["2026-09-21 14:30", "2026-09-22 16:00", "2026-09-23 09:30"]},
+    {"id": "patel", "name": "Dr. Asha Patel", "specialty": "General Medicine", "fee": 105, "rating": 4.6,
+     "bio": "Comprehensive adult primary care and chronic disease management.",
+     "slots": ["2026-09-21 10:30", "2026-09-22 11:30", "2026-09-23 15:30"]},
+    {"id": "reyes", "name": "Dr. Carlos Reyes", "specialty": "General Medicine", "fee": 90, "rating": 4.2,
+     "bio": "Walk-in friendly primary and preventive care.",
+     "slots": ["2026-09-21 12:00", "2026-09-22 13:30", "2026-09-23 16:30"]},
 ]
 DOCTORS_BY_ID = {d["id"]: d for d in DOCTORS}
 SPECIALTIES = sorted({d["specialty"] for d in DOCTORS})
