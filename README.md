@@ -170,11 +170,20 @@ workflow starts `website/server.py` before this stage and stops it after, whatev
 outcome. The pack uploads with 90-day retention — that's the artifact you hand a prospect's
 QA lead or drop into an audit.
 
-To open a downloaded pack:
+To open a downloaded pack locally:
 
 ```bash
 kane-cli evidence serve healthcare-regression-42.evidence
 ```
+
+**Or skip the download entirely.** `testrun run` publishes the whole batch's evidence pack
+to the TestMu AI **Test Manager (TMS)** dashboard automatically — the same project
+`TESTMUAI_PROJECT_ID` points at. The "Report the dashboard link" step in the `evidence`
+job checks for the `testrun_evidence_ingest` publish event and, when present, puts a
+"View in Test Manager" link straight in the run's job summary — open the GitHub Actions
+run page and click it, no artifact download or local CLI needed. If that step instead
+shows the "did not publish" warning, the pack is local-only for that run — this can happen
+if the project/folder didn't resolve; check `kane-cli whoami` and `kane-cli config project`.
 
 ### 3 · Coverage — designed × proven
 

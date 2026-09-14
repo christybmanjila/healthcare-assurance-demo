@@ -252,6 +252,29 @@ jobs:
         if: always()
         run: kill "$(cat website.pid)" 2>/dev/null || true
 
+      # testrun publishes the whole batch's evidence pack to the TMS dashboard via a
+      # testrun_evidence_ingest event; absent means publish was skipped (the run stays
+      # local-only, viewable only via a downloaded pack + `kane-cli evidence serve`).
+      - name: Report the dashboard link
+        if: always() && steps.execute.outcome != 'skipped'
+        env:
+          TESTMUAI_PROJECT_ID: ${{ secrets.TESTMUAI_PROJECT_ID }}
+        run: |
+          {
+            echo "## Dashboard"
+            echo
+            if grep -q '"type":"testrun_evidence_ingest"' testrun.ndjson 2>/dev/null; then
+              echo "Evidence pack published — view every test's screenshots and steps directly:"
+              echo
+              echo "[Open in Test Manager](https://test-manager.lambdatest.com/projects/${TESTMUAI_PROJECT_ID})"
+            else
+              echo "⚠️ This run's evidence pack did not publish to the dashboard (no"
+              echo "\`testrun_evidence_ingest\` event) — it's local-only this time. Download"
+              echo "the \`healthcare-evidence-*\` artifact and run \`kane-cli evidence serve\`"
+              echo "to view it, or check \`kane-cli whoami\` / project-folder config."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Save recorded steps
         if: always() && steps.execute.outcome != 'skipped'
         uses: actions/cache/save@v4

@@ -57,12 +57,24 @@ runs:
       env:
         LT_USERNAME: ${{ inputs.username }}
         LT_ACCESS_KEY: ${{ inputs.access-key }}
+      run: |
+        set -euo pipefail
+        kane-cli login --username "$LT_USERNAME" --access-key "$LT_ACCESS_KEY"
+        kane-cli whoami
+
+    # `login --project-id/--folder-id` alone was not reliably landing runs in the right
+    # place (evidence packs weren't publishing to the dashboard at all — testrun_evidence_ingest
+    # never fired). `config project`/`config folder` is the documented, persistent way to pin
+    # this non-interactively; run it explicitly, every time, so a stale/missing cached value
+    # never falls back to an unpublished run.
+    - name: Select TMS project and folder
+      if: ${{ inputs.project-id != '' }}
+      shell: bash
+      env:
         TESTMUAI_PROJECT_ID: ${{ inputs.project-id }}
         TESTMUAI_FOLDER_ID: ${{ inputs.folder-id }}
       run: |
         set -euo pipefail
-        ARGS=(login --username "$LT_USERNAME" --access-key "$LT_ACCESS_KEY")
-        [ -n "$TESTMUAI_PROJECT_ID" ] && ARGS+=(--project-id "$TESTMUAI_PROJECT_ID")
-        [ -n "$TESTMUAI_FOLDER_ID" ]  && ARGS+=(--folder-id  "$TESTMUAI_FOLDER_ID")
-        kane-cli "${ARGS[@]}"
-        kane-cli whoami
+        kane-cli config project "$TESTMUAI_PROJECT_ID"
+        [ -n "$TESTMUAI_FOLDER_ID" ] && kane-cli config folder "$TESTMUAI_FOLDER_ID"
+        true
